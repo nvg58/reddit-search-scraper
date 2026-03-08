@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Reddit Search Scraper",
+  "version": "1.1.0",
+  "description": "Scrape Reddit search results and all comments from posts",
+  "permissions": ["activeTab", "tabs", "scripting", "sidePanel"],
+  "host_permissions": ["https://www.reddit.com/*"],
+  "action": {
+    "default_title": "Reddit Search Scraper"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
