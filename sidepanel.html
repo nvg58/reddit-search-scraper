@@ -233,15 +233,50 @@
       font-size: 11px;
       color: #818384;
     }
+    /* Mode toggle tabs */
+    .mode-toggle {
+      display: flex;
+      margin-bottom: 12px;
+      background: #272729;
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .mode-toggle button {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 0;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #272729;
+      color: #818384;
+      transition: background 0.2s, color 0.2s;
+    }
+    .mode-toggle button.active {
+      background: #ff4500;
+      color: white;
+    }
+    .mode-toggle button:hover:not(.active) {
+      background: #343536;
+      color: #d7dadc;
+    }
   </style>
 </head>
 <body>
-  <h1>Reddit Search Scraper</h1>
+  <h1>Reddit Scraper</h1>
 
-  <!-- Batch Keywords Section -->
+  <!-- Mode Toggle -->
+  <div class="mode-toggle">
+    <button id="mode-keywords" class="active">Search Keywords</button>
+    <button id="mode-subreddits">Subreddits</button>
+  </div>
+
+  <!-- Input Section -->
   <div class="section">
-    <div class="section-title">Batch Keywords</div>
-    <label for="keywords">One keyword per line:</label>
+    <div class="section-title" id="input-title">Batch Keywords</div>
+    <label for="keywords" id="input-label">One keyword per line:</label>
     <textarea id="keywords" placeholder="years of insomnia&#10;sleep remedies&#10;chronic insomnia treatment"></textarea>
     <div class="file-upload">
       <button class="file-upload-btn" id="btn-upload">Upload .txt</button>
@@ -255,7 +290,7 @@
     <div class="section-title">Settings</div>
     <div class="row">
       <div>
-        <label for="post-count">Posts per keyword</label>
+        <label for="post-count" id="post-count-label">Posts per keyword</label>
         <input type="number" id="post-count" value="100" min="1" max="500">
       </div>
       <div>
@@ -278,7 +313,7 @@
   <!-- Batch Action -->
   <button id="btn-batch">Start Batch Scrape</button>
 
-  <div class="divider">— or scrape current search page —</div>
+  <div class="divider" id="scrape-divider">— or scrape current search page —</div>
   <button id="btn-scrape">Scrape This Page</button>
 
   <button id="btn-stop">Stop</button>

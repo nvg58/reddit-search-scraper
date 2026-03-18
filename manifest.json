@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Reddit Search Scraper",
   "version": "1.1.0",
-  "description": "Scrape Reddit search results and all comments from posts",
-  "permissions": ["activeTab", "tabs", "scripting", "sidePanel"],
+  "description": "Scrape Reddit search results or subreddit posts with all comments",
+  "permissions": ["activeTab", "tabs", "scripting", "sidePanel", "storage"],
   "host_permissions": ["https://www.reddit.com/*"],
   "action": {
     "default_title": "Reddit Search Scraper"

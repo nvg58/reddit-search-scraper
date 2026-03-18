@@ -15,10 +15,51 @@ const statComments = document.getElementById("stat-comments");
 const keywordProgressDiv = document.getElementById("keyword-progress");
 const keywordProgressText = document.getElementById("keyword-progress-text");
 const keywordProgressSub = document.getElementById("keyword-progress-sub");
+const modeKeywordsBtn = document.getElementById("mode-keywords");
+const modeSubredditsBtn = document.getElementById("mode-subreddits");
 
 // ========== STATE ==========
 let shouldStop = false;
 let finalData = null;
+let currentMode = "keywords"; // "keywords" or "subreddits"
+
+// ========== MODE TOGGLE ==========
+function setMode(mode) {
+  currentMode = mode;
+  chrome.storage.local.set({ scraper_mode: mode });
+  const inputTitle = document.getElementById("input-title");
+  const inputLabel = document.getElementById("input-label");
+  const postCountLabel = document.getElementById("post-count-label");
+  const scrapeDivider = document.getElementById("scrape-divider");
+
+  if (mode === "keywords") {
+    modeKeywordsBtn.classList.add("active");
+    modeSubredditsBtn.classList.remove("active");
+    inputTitle.textContent = "Batch Keywords";
+    inputLabel.textContent = "One keyword per line:";
+    keywordsEl.placeholder = "years of insomnia\nsleep remedies\nchronic insomnia treatment";
+    postCountLabel.textContent = "Posts per keyword";
+    scrapeDivider.textContent = "— or scrape current search page —";
+  } else {
+    modeSubredditsBtn.classList.add("active");
+    modeKeywordsBtn.classList.remove("active");
+    inputTitle.textContent = "Subreddits";
+    inputLabel.textContent = "One subreddit per line (with or without r/):";
+    keywordsEl.placeholder = "r/Menopause\nr/insomnia\nsleepapnea";
+    postCountLabel.textContent = "Posts per subreddit";
+    scrapeDivider.textContent = "— or scrape current subreddit page —";
+  }
+}
+
+modeKeywordsBtn.addEventListener("click", () => setMode("keywords"));
+modeSubredditsBtn.addEventListener("click", () => setMode("subreddits"));
+
+// Restore saved mode on load
+chrome.storage.local.get("scraper_mode", (result) => {
+  if (result.scraper_mode === "subreddits" || result.scraper_mode === "keywords") {
+    setMode(result.scraper_mode);
+  }
+});
 
 // ========== UTILS ==========
 function log(msg, type = "") {
@@ -103,6 +144,44 @@ function resetUI() {
   keywordProgressDiv.style.display = "none";
 }
 
+// ========== HELPERS: Parse input based on mode ==========
+function parseInputItems() {
+  const rawText = keywordsEl.value.trim();
+  if (!rawText) return [];
+
+  const lines = rawText
+    .split("\n")
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+
+  if (currentMode === "subreddits") {
+    return lines.map((k) => k.replace(/^r\//, ""));
+  }
+  return lines;
+}
+
+function buildUrl(item) {
+  if (currentMode === "subreddits") {
+    return `https://www.reddit.com/r/${encodeURIComponent(item)}/`;
+  }
+  return `https://www.reddit.com/search/?q=${encodeURIComponent(item)}`;
+}
+
+function itemLabel(item) {
+  if (currentMode === "subreddits") {
+    return `r/${item}`;
+  }
+  return `"${item}"`;
+}
+
+function modeNoun() {
+  return currentMode === "subreddits" ? "subreddit" : "keyword";
+}
+
+function modeNounPlural() {
+  return currentMode === "subreddits" ? "subreddits" : "keywords";
+}
+
 // ========== CORE: Navigate and Wait ==========
 async function navigateAndWait(tabId, url) {
   return new Promise((resolve) => {
@@ -121,7 +200,7 @@ async function navigateAndWait(tabId, url) {
 function scrollAndCollectPosts(tabId, postCount, scrollDelay, fetchComments) {
   return new Promise(async (resolve, reject) => {
     try {
-      // Inject config globals
+      // Inject config globals + page type
       await chrome.scripting.executeScript({
         target: { tabId },
         func: (count, delay) => {
@@ -251,7 +330,7 @@ async function fetchCommentsForPosts(posts, fetchDelay) {
   return results;
 }
 
-// ========== CORE: Scrape a single search page (full pipeline) ==========
+// ========== CORE: Scrape a single page (full pipeline) ==========
 async function scrapeCurrentPage(tabId, settings) {
   const { postCount, scrollDelay, fetchDelay, fetchComments } = settings;
 
@@ -272,19 +351,11 @@ async function scrapeCurrentPage(tabId, settings) {
 
 // ========== BATCH SCRAPE ==========
 btnBatch.addEventListener("click", async () => {
-  const rawText = keywordsEl.value.trim();
-  if (!rawText) {
-    log("Please enter at least one keyword!", "error");
-    return;
-  }
-
-  const keywords = rawText
-    .split("\n")
-    .map((k) => k.trim())
-    .filter((k) => k.length > 0);
-
-  if (keywords.length === 0) {
-    log("No valid keywords found!", "error");
+  // Snapshot the mode at batch start so it can't change mid-run
+  const batchMode = currentMode;
+  const items = parseInputItems();
+  if (items.length === 0) {
+    log(`Please enter at least one ${modeNoun()}!`, "error");
     return;
   }
 
@@ -304,27 +375,39 @@ btnBatch.addEventListener("click", async () => {
   const tabId = tab.id;
   const date = new Date().toISOString().slice(0, 10);
 
-  log(`=== BATCH SCRAPE: ${keywords.length} keywords ===`, "keyword");
+  // Use snapshot mode for all batch helpers
+  const batchBuildUrl = (item) => {
+    if (batchMode === "subreddits") {
+      return `https://www.reddit.com/r/${encodeURIComponent(item)}/`;
+    }
+    return `https://www.reddit.com/search/?q=${encodeURIComponent(item)}`;
+  };
+  const batchItemLabel = (item) => batchMode === "subreddits" ? `r/${item}` : `"${item}"`;
+  const batchModeNoun = () => batchMode === "subreddits" ? "subreddit" : "keyword";
+  const batchModeNounPlural = () => batchMode === "subreddits" ? "subreddits" : "keywords";
 
-  for (let ki = 0; ki < keywords.length; ki++) {
+  log(`=== BATCH SCRAPE: ${items.length} ${batchModeNounPlural()} (${batchMode} mode) ===`, "keyword");
+
+  for (let ki = 0; ki < items.length; ki++) {
     if (shouldStop) {
       log("Batch stopped by user.", "error");
       break;
     }
 
-    const keyword = keywords[ki];
-    const searchUrl = `https://www.reddit.com/search/?q=${encodeURIComponent(keyword)}`;
+    const item = items[ki];
+    const targetUrl = batchBuildUrl(item);
+    const label = batchItemLabel(item);
 
     // Update keyword progress
     keywordProgressDiv.style.display = "block";
-    keywordProgressText.textContent = `Keyword ${ki + 1}/${keywords.length}: ${keyword}`;
-    keywordProgressSub.textContent = `Navigating to search...`;
+    keywordProgressText.textContent = `${batchModeNoun()} ${ki + 1}/${items.length}: ${label}`;
+    keywordProgressSub.textContent = `Navigating to ${batchMode === "subreddits" ? "subreddit" : "search"}...`;
 
     log(``, "");
-    log(`▸ [${ki + 1}/${keywords.length}] "${keyword}"`, "keyword");
-    log(`  Navigating to: ${searchUrl}`);
+    log(`▸ [${ki + 1}/${items.length}] ${label}`, "keyword");
+    log(`  Navigating to: ${targetUrl}`);
 
-    // Reset per-keyword stats
+    // Reset per-item stats
     statPosts.textContent = "0";
     statComments.textContent = "0";
     document.getElementById("stat-errors").textContent = "0";
@@ -333,23 +416,23 @@ btnBatch.addEventListener("click", async () => {
     document.getElementById("stat-delay").style.color = "#818384";
     setProgress(0);
 
-    // Navigate to search page
-    await navigateAndWait(tabId, searchUrl);
+    // Navigate to page
+    await navigateAndWait(tabId, targetUrl);
 
-    // Extra wait for Reddit JS to render search results
+    // Extra wait for Reddit JS to render
     keywordProgressSub.textContent = "Waiting for page to render...";
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Scrape this keyword's search page
+    // Scrape page
     try {
       keywordProgressSub.textContent = "Scrolling & collecting posts...";
       const data = await scrapeCurrentPage(tabId, settings);
 
       if (data.length > 0) {
-        // Auto-download this keyword's results
+        // Auto-download this item's results
         const totalComments = data.reduce((s, p) => s + (p.comments?.length || 0), 0);
         const errorCount = data.filter((p) => p.error).length;
-        const filename = `reddit-${slugify(keyword)}-${date}.json`;
+        const filename = `reddit-${slugify(item)}-${date}.json`;
         downloadJSON(data, filename);
 
         log(`  ✓ Done: ${data.length} posts, ${totalComments} comments, ${errorCount} errors`, "success");
@@ -360,22 +443,22 @@ btnBatch.addEventListener("click", async () => {
         document.getElementById("stat-errors").textContent = errorCount;
         document.getElementById("stat-errors").style.color = errorCount > 0 ? "#ff4500" : "#818384";
       } else {
-        log(`  ⚠ No posts found for "${keyword}"`, "error");
+        log(`  ⚠ No posts found for ${label}`, "error");
       }
     } catch (err) {
-      log(`  ✗ Error scraping "${keyword}": ${err.message}`, "error");
+      log(`  ✗ Error scraping ${label}: ${err.message}`, "error");
     }
 
-    // Brief pause between keywords
-    if (ki < keywords.length - 1 && !shouldStop) {
-      keywordProgressSub.textContent = "Pausing before next keyword...";
+    // Brief pause between items
+    if (ki < items.length - 1 && !shouldStop) {
+      keywordProgressSub.textContent = `Pausing before next ${batchModeNoun()}...`;
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
   // Batch complete
-  keywordProgressText.textContent = `Batch complete: ${keywords.length} keywords`;
-  keywordProgressSub.textContent = shouldStop ? "Stopped early by user." : "All keywords processed.";
+  keywordProgressText.textContent = `Batch complete: ${items.length} ${batchModeNounPlural()}`;
+  keywordProgressSub.textContent = shouldStop ? "Stopped early by user." : `All ${batchModeNounPlural()} processed.`;
   log(`=== BATCH COMPLETE ===`, "keyword");
   setProgress(100);
   setStatus("Batch complete!");
@@ -385,8 +468,10 @@ btnBatch.addEventListener("click", async () => {
 // ========== SINGLE PAGE SCRAPE ==========
 btnScrape.addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url?.includes("reddit.com/search")) {
-    log("Please navigate to a Reddit search page first!", "error");
+  const isSearch = tab?.url?.includes("reddit.com/search");
+  const isSubreddit = tab?.url?.match(/reddit\.com\/r\/\w+/);
+  if (!isSearch && !isSubreddit) {
+    log("Please navigate to a Reddit search page or subreddit first!", "error");
     return;
   }
 
